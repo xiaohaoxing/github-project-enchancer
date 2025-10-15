@@ -1,22 +1,28 @@
-# Github Project 增强工具
+# GitHub Project Filter Enhancer（基于 WXT 的浏览器扩展）
 
+使用 WXT 框架重构，在 GitHub Projects 页面提供：一键模糊搜索与常用筛选收藏，结构模块化、易维护。
 
-## 功能点：
+## 主要功能
+- 一键模糊搜索：把当前输入转换为 `title:*关键词*`
+- 收藏与管理筛选：⭐ 保存，列表选择，支持删除管理
 
-### GitHub Project 一键模糊搜索
+## 安装与运行（WXT）
+1. 安装依赖：`npm i`
+2. 开发调试：`npm run dev`（根据指引加载开发版扩展）
+3. 构建打包：`npm run build`，`npm run zip`
 
-GitHub 的搜索默认是前缀匹配，实在是反人类。本插件在页面上添加一个小小的格式化按钮，实现一键模糊查询。
+## 目录结构
+- 入口：`entrypoints/content.ts`
+- 模块：`modules/`（`filter.ts`、`storage.ts`、`ui.ts`）
+- 配置：`wxt.config.ts`、`tsconfig.json`
 
-### 常用筛选条件
+## 文档
+- 功能说明：`docs/FEATURES-zh.md`
+- 本地开发与发布：`docs/DEVELOPMENT-zh.md`
+- 商店上架文案：`STORE-LISTING-zh.md`
+- 隐私政策：`PRIVACY-POLICY-zh.md`
 
-- **保存筛选**: 点击 ⭐ 按钮可以保存当前的筛选条件，并为其命名
-- **快速访问**: 从搜索框上方的下拉菜单中选择已保存的筛选条件
-- **删除筛选**: 从下拉菜单中选择"🗑️ 管理筛选条件"来查看和删除已保存的筛选
-
-## 使用方法
-
-1. 在 Tampermonkey 中安装脚本
-2. 访问任意 GitHub 项目页面
-3. 使用"模糊"按钮将搜索转换为模糊格式 (title:*searchterm*)
-4. 使用 ⭐ 按钮保存常用的筛选条件
-5. 从下拉菜单访问已保存的筛选条件
+## 兼容性与说明
+- Chromium 浏览器（MV3）
+- 仅在 `github.com` 的 Projects 页面注入
+- 旧目录 `extension/` 已废弃，仅保留参考
