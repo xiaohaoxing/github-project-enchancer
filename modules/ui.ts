@@ -3,10 +3,11 @@ import { getSavedFilters, saveFilter, deleteFilter, type SavedFilter } from './s
 
 const INPUT_ID = 'filter-bar-component-input';
 const BUTTON_ID = 'tampermonkey-format-title-button';
-const BUTTON_TEXT = '模糊';
+const BUTTON_TEXT = 'Fuzzy';
 const SAVE_BUTTON_ID = 'tampermonkey-save-filter-button';
 const SAVE_BUTTON_TEXT = '⭐';
 const DROPDOWN_ID = 'tampermonkey-saved-filters-dropdown';
+const SAVE_POPOVER_ID = 'tampermonkey-save-filter-popover';
 const TOOLBAR_ID = 'tampermonkey-filter-toolbar';
 const WRAPPER_CLASS = 'tampermonkey-input-wrapper';
 const MIN_INPUT_TEXT_AREA_WIDTH = 50;
@@ -14,10 +15,11 @@ const MIN_INPUT_TEXT_AREA_WIDTH = 50;
 let filterInput: HTMLInputElement | HTMLTextAreaElement | null = null;
 let formatButton: HTMLButtonElement | null = null;
 let saveButton: HTMLButtonElement | null = null;
-let savedFiltersDropdown: HTMLSelectElement | null = null;
+let savedFiltersDropdown: HTMLDivElement | null = null;
 let toolbar: HTMLDivElement | null = null;
 let inputWrapper: HTMLDivElement | null = null;
 let resizeObserver: ResizeObserver | null = null;
+let savePopover: HTMLDivElement | null = null;
 
 export function initToolbarAndButtons(): void {
     const mutationObserver = new MutationObserver(() => {
@@ -44,7 +46,7 @@ async function updateDropdown(dropdown?: HTMLSelectElement | null): Promise<void
 
     const defaultOption = document.createElement('option');
     defaultOption.value = '';
-    defaultOption.textContent = filters.length > 0 ? '常用筛选...' : '无保存的筛选';
+    defaultOption.textContent = filters.length > 0 ? `Saved filters(${filters.length})` : 'No saved filters';
     dropdown.appendChild(defaultOption);
 
     filters.forEach((filter) => {
@@ -63,12 +65,167 @@ async function updateDropdown(dropdown?: HTMLSelectElement | null): Promise<void
 
         const manageOption = document.createElement('option');
         manageOption.value = 'manage';
-        manageOption.textContent = '🗑️ 管理筛选条件';
+        manageOption.textContent = 'Manage saved filters';
         manageOption.style.fontStyle = 'italic';
         dropdown.appendChild(manageOption);
     }
 
     dropdown.style.display = 'block';
+}
+
+async function updateMenu(container?: HTMLDivElement | null): Promise<void> {
+    container = container || (document.getElementById(DROPDOWN_ID) as HTMLDivElement | null);
+    if (!container) return;
+
+    const filters = await getSavedFilters();
+    container.innerHTML = '';
+
+    const trigger = document.createElement('button');
+    trigger.type = 'button';
+    trigger.textContent = filters.length > 0 ? `Saved filters(${filters.length})` : 'No saved filters';
+    trigger.className = 'btn btn-sm';
+    trigger.style.height = '28px';
+    trigger.style.fontSize = '12px';
+    trigger.style.lineHeight = '18px';
+    trigger.style.marginRight = '8px';
+    trigger.style.padding = '4px 8px';
+    trigger.style.cursor = 'pointer';
+
+    const menu = document.createElement('div');
+    menu.style.position = 'absolute';
+    menu.style.top = '100%';
+    menu.style.left = '0';
+    menu.style.zIndex = '1000';
+    menu.style.minWidth = '200px';
+    menu.style.padding = '4px 0';
+    menu.style.marginTop = '4px';
+    menu.style.border = '1px solid var(--color-border-default, rgba(31, 35, 40, 0.15))';
+    menu.style.borderRadius = '6px';
+    menu.style.backgroundColor = 'var(--color-canvas-default, #ffffff)';
+    menu.style.boxShadow = '0 8px 24px rgba(140, 149, 159, 0.2)';
+    menu.style.display = 'none';
+
+    const list = document.createElement('div');
+    list.style.maxHeight = '320px';
+    list.style.overflowY = 'auto';
+
+    if (filters.length === 0) {
+        const empty = document.createElement('div');
+        empty.textContent = `No saved filters(${filters.length})`;
+        empty.style.padding = '8px 12px';
+        empty.style.fontSize = '12px';
+        empty.style.color = 'var(--color-fg-muted, #57606a)';
+        list.appendChild(empty);
+    } else {
+        filters.forEach((f) => {
+            const row = document.createElement('div');
+            row.style.display = 'flex';
+            row.style.alignItems = 'center';
+            row.style.gap = '10px';
+            row.style.padding = '8px 12px';
+            row.style.cursor = 'pointer';
+            row.addEventListener('mouseenter', () => {
+                row.style.backgroundColor = 'var(--color-canvas-subtle, #f6f8fa)';
+            });
+            row.addEventListener('mouseleave', () => {
+                row.style.backgroundColor = 'transparent';
+            });
+
+            const nameSpan = document.createElement('span');
+            nameSpan.textContent = f.name;
+            nameSpan.title = f.value;
+            nameSpan.style.flex = '1';
+            nameSpan.style.fontSize = '12px';
+            nameSpan.style.color = 'var(--color-fg-default, #24292f)';
+            nameSpan.addEventListener('click', (e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                applyFilter(f.value);
+                menu.style.display = 'none';
+            });
+
+            const delBtn = document.createElement('button');
+            delBtn.type = 'button';
+            delBtn.textContent = '';
+            delBtn.title = 'Delete';
+            delBtn.setAttribute('aria-label', 'Delete');
+            delBtn.style.width = '22px';
+            delBtn.style.height = '22px';
+            delBtn.style.lineHeight = '20px';
+            delBtn.style.fontSize = '12px';
+            delBtn.style.textAlign = 'center';
+            delBtn.style.border = '1px solid var(--color-border-default, rgba(31, 35, 40, 0.15))';
+            delBtn.style.borderRadius = '4px';
+            delBtn.style.background = 'var(--color-btn-bg, #f6f8fa)';
+            delBtn.style.cursor = 'pointer';
+            delBtn.style.marginLeft = '2px';
+            // inline trash SVG
+            {
+                const svgNS = 'http://www.w3.org/2000/svg';
+                const svg = document.createElementNS(svgNS, 'svg');
+                svg.setAttribute('width', '12');
+                svg.setAttribute('height', '12');
+                svg.setAttribute('viewBox', '0 0 16 16');
+                svg.setAttribute('aria-hidden', 'true');
+                svg.style.display = 'block';
+                svg.style.margin = 'auto';
+                svg.style.color = 'var(--color-fg-default, #24292f)';
+                const path = document.createElementNS(svgNS, 'path');
+                path.setAttribute('fill', 'currentColor');
+                // trash can icon path
+                path.setAttribute('d', 'M6.5 1h3a.5.5 0 01.5.5V3h3a.5.5 0 010 1h-.5l-.7 9.1A2 2 0 0110.81 15H5.19a2 2 0 01-1.99-1.9L2.5 4H2a.5.5 0 010-1h3V1.5A.5.5 0 015.5 1h1zm1 .999h1V3h-1V1.999zM3.5 4l.69 9.01a1 1 0 00.99.99h5.64a1 1 0 00.99-.99L12.5 4h-9z');
+                svg.appendChild(path);
+                delBtn.appendChild(svg);
+            }
+            delBtn.addEventListener('click', async (e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                await deleteFilter(f.id);
+                await updateMenu(container!);
+            });
+
+            row.appendChild(nameSpan);
+            row.appendChild(delBtn);
+            list.appendChild(row);
+        });
+    }
+
+    menu.appendChild(list);
+
+    function hideMenu() {
+        menu.style.display = 'none';
+        document.removeEventListener('click', onDocClick, true);
+    }
+    function onDocClick(ev: MouseEvent) {
+        if (!container?.contains(ev.target as Node)) hideMenu();
+    }
+
+    trigger.addEventListener('click', (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        const next = menu.style.display === 'none' ? 'block' : 'none';
+        menu.style.display = next;
+        if (next === 'block') {
+            document.addEventListener('click', onDocClick, true);
+        } else {
+            document.removeEventListener('click', onDocClick, true);
+        }
+    });
+
+    container.style.position = 'relative';
+    container.style.display = 'inline-block';
+    container.appendChild(trigger);
+    container.appendChild(menu);
+}
+
+function createMenu(): HTMLDivElement {
+    const existing = document.getElementById(DROPDOWN_ID) as HTMLDivElement | null;
+    if (existing) return existing;
+    const container = document.createElement('div');
+    container.id = DROPDOWN_ID;
+    container.style.marginRight = '8px';
+    void updateMenu(container);
+    return container as HTMLDivElement;
 }
 
 function createSaveButton(): HTMLButtonElement {
@@ -77,9 +234,11 @@ function createSaveButton(): HTMLButtonElement {
 
     const button = document.createElement('button');
     button.id = SAVE_BUTTON_ID;
-    button.textContent = SAVE_BUTTON_TEXT;
+    // Use inline SVG icon for save (star)
+    button.textContent = '';
+    button.setAttribute('aria-label', 'Save current filter');
     button.type = 'button';
-    button.title = '保存当前筛选条件';
+    button.title = 'Save current filter';
     button.className = 'btn btn-sm';
     button.style.fontSize = '12px';
     button.style.lineHeight = '18px';
@@ -93,23 +252,28 @@ function createSaveButton(): HTMLButtonElement {
     button.style.minWidth = 'auto';
     button.style.fontWeight = '500';
 
-    button.addEventListener('click', async (event) => {
+    // Insert star SVG
+    {
+        const svgNS = 'http://www.w3.org/2000/svg';
+        const svg = document.createElementNS(svgNS, 'svg');
+        svg.setAttribute('width', '16');
+        svg.setAttribute('height', '16');
+        svg.setAttribute('viewBox', '0 0 16 16');
+        svg.setAttribute('aria-hidden', 'true');
+        svg.style.display = 'block';
+        svg.style.color = 'var(--color-fg-default, #24292f)';
+        const path = document.createElementNS(svgNS, 'path');
+        path.setAttribute('fill', 'currentColor');
+        // star icon path
+        path.setAttribute('d', 'M8 12.027 3.693 14.5l.82-4.781L1 6.5l4.846-.703L8 1.5l2.154 4.297L15 6.5l-3.513 3.219.82 4.781L8 12.027z');
+        svg.appendChild(path);
+        button.appendChild(svg);
+    }
+
+    button.addEventListener('click', (event) => {
         event.preventDefault();
         event.stopPropagation();
-        const currentDomInput = document.getElementById(INPUT_ID) as HTMLInputElement | HTMLTextAreaElement | null;
-        if (!currentDomInput) return;
-        filterInput = currentDomInput;
-        const current = filterInput.value.trim();
-        if (current !== '') {
-            const filterName = prompt('请输入筛选条件的名称：', current.substring(0, 20));
-            if (filterName && filterName.trim()) {
-                await saveFilter(filterName.trim(), filterInput.value);
-                alert('筛选条件已保存！');
-                await updateDropdown();
-            }
-        } else {
-            alert('请先输入筛选条件');
-        }
+        showSavePopover(button);
     });
 
     return button as HTMLButtonElement;
@@ -169,7 +333,7 @@ function createFormatButton(): HTMLButtonElement {
     button.id = BUTTON_ID;
     button.textContent = BUTTON_TEXT;
     button.type = 'button';
-    button.title = '转换为模糊搜索格式';
+    button.title = 'Convert to fuzzy query';
     button.className = 'btn-sm';
 
     button.style.position = 'absolute';
@@ -337,7 +501,7 @@ function setupInputAndButton(): void {
     }
 
     if (!savedFiltersDropdown || !toolbar.contains(savedFiltersDropdown)) {
-        savedFiltersDropdown = createDropdown();
+        savedFiltersDropdown = createMenu();
         toolbar.appendChild(savedFiltersDropdown);
     }
 
@@ -355,32 +519,127 @@ function setupInputAndButton(): void {
         if (inputWrapper) resizeObserver.observe(inputWrapper);
     }
 
-    void updateDropdown();
+    void updateMenu();
+}
+
+function showSavePopover(anchor: HTMLElement): void {
+    const currentDomInput = document.getElementById(INPUT_ID) as HTMLInputElement | HTMLTextAreaElement | null;
+    if (!currentDomInput) return;
+    filterInput = currentDomInput;
+
+    if (savePopover && document.body.contains(savePopover)) {
+        savePopover.remove();
+    }
+
+    savePopover = document.createElement('div');
+    savePopover.id = SAVE_POPOVER_ID;
+    savePopover.style.position = 'absolute';
+    savePopover.style.zIndex = '1000';
+    savePopover.style.padding = '8px';
+    savePopover.style.border = '1px solid var(--color-border-default, rgba(31, 35, 40, 0.15))';
+    savePopover.style.borderRadius = '6px';
+    savePopover.style.background = 'var(--color-canvas-default, #ffffff)';
+    savePopover.style.boxShadow = '0 8px 24px rgba(140, 149, 159, 0.2)';
+    savePopover.style.fontSize = '12px';
+
+    const input = document.createElement('input');
+    input.type = 'text';
+    input.placeholder = 'Filter name';
+    input.value = (filterInput.value || '').trim().substring(0, 20);
+    input.style.width = '180px';
+    input.style.marginRight = '6px';
+    input.style.padding = '4px 6px';
+    input.style.border = '1px solid var(--color-border-default, rgba(31, 35, 40, 0.15))';
+    input.style.borderRadius = '4px';
+
+    const saveBtn = document.createElement('button');
+    saveBtn.type = 'button';
+    saveBtn.textContent = 'Save';
+    saveBtn.className = 'btn btn-sm';
+    saveBtn.style.height = '24px';
+    saveBtn.style.padding = '2px 8px';
+    saveBtn.style.marginRight = '6px';
+
+    const cancelBtn = document.createElement('button');
+    cancelBtn.type = 'button';
+    cancelBtn.textContent = 'Cancel';
+    cancelBtn.className = 'btn btn-sm';
+    cancelBtn.style.height = '24px';
+    cancelBtn.style.padding = '2px 8px';
+
+    const row = document.createElement('div');
+    row.style.display = 'flex';
+    row.style.alignItems = 'center';
+    row.appendChild(input);
+    row.appendChild(saveBtn);
+    row.appendChild(cancelBtn);
+    savePopover.appendChild(row);
+
+    function close() {
+        document.removeEventListener('click', onDoc, true);
+        document.removeEventListener('keydown', onKey, true);
+        if (savePopover && savePopover.parentNode) savePopover.parentNode.removeChild(savePopover);
+        savePopover = null;
+    }
+    async function doSave() {
+        const name = input.value.trim();
+        const value = filterInput?.value?.trim() || '';
+        if (!name || !value) {
+            close();
+            return;
+        }
+        await saveFilter(name, value);
+        await updateMenu();
+        close();
+    }
+    function onDoc(ev: MouseEvent) {
+        if (!savePopover?.contains(ev.target as Node) && ev.target !== anchor) close();
+    }
+    function onKey(ev: KeyboardEvent) {
+        if (ev.key === 'Escape') close();
+        if (ev.key === 'Enter') {
+            ev.preventDefault();
+            void doSave();
+        }
+    }
+
+    saveBtn.addEventListener('click', () => void doSave());
+    cancelBtn.addEventListener('click', () => close());
+
+    document.addEventListener('click', onDoc, true);
+    document.addEventListener('keydown', onKey, true);
+
+    const rect = anchor.getBoundingClientRect();
+    savePopover.style.top = `${rect.bottom + window.scrollY + 6}px`;
+    savePopover.style.left = `${rect.left + window.scrollX}px`;
+
+    document.body.appendChild(savePopover);
+    input.focus();
 }
 
 async function showManageFiltersDialog(): Promise<void> {
     const filters = await getSavedFilters();
     if (filters.length === 0) {
-        alert('没有保存的筛选条件');
+        alert('No saved filters');
         return;
     }
-    let message = '已保存的筛选条件：\n\n';
+    let message = 'Saved filters:\n\n';
     filters.forEach((filter, index) => {
-        message += `${index + 1}. ${filter.name}\n   值: ${filter.value}\n\n`;
+        message += `${index + 1}. ${filter.name}\n   Value: ${filter.value}\n\n`;
     });
-    message += `\n输入要删除的筛选条件编号（1-${filters.length}），或点击取消：`;
+    message += `\nEnter the index to delete (1-${filters.length}), or cancel:`;
     const input = prompt(message);
     if (input) {
         const index = parseInt(input, 10) - 1;
         if (index >= 0 && index < filters.length) {
             const filterToDelete = filters[index] as SavedFilter;
-            if (confirm(`确定要删除"${filterToDelete.name}"吗？`)) {
+            if (confirm(`Delete "${filterToDelete.name}"?`)) {
                 await deleteFilter(filterToDelete.id);
-                alert('筛选条件已删除');
+                alert('Filter deleted');
                 await updateDropdown();
             }
         } else {
-            alert('无效的编号');
+            alert('Invalid index');
         }
     }
 }
