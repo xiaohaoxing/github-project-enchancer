@@ -21,6 +21,7 @@ let inputWrapper: HTMLDivElement | null = null;
 let resizeObserver: ResizeObserver | null = null;
 let savePopover: HTMLDivElement | null = null;
 
+
 export function initToolbarAndButtons(): void {
     const mutationObserver = new MutationObserver(() => {
         const currentInput = document.getElementById(INPUT_ID);
@@ -363,8 +364,22 @@ function createFormatButton(): HTMLButtonElement {
         const currentDomInput = document.getElementById(INPUT_ID) as HTMLInputElement | HTMLTextAreaElement | null;
         if (!currentDomInput) return;
         filterInput = currentDomInput;
-        const raw = filterInput.value.trim();
-        if (raw !== '') applyFilter(toFuzzyQuery(raw));
+        const value = filterInput.value;
+        const selectionStart = (filterInput as HTMLInputElement).selectionStart ?? 0;
+        const selectionEnd = (filterInput as HTMLInputElement).selectionEnd ?? 0;
+        if (selectionEnd > selectionStart) {
+            const selected = value.slice(selectionStart, selectionEnd);
+            const fuzzyToken = toFuzzyQuery(selected);
+            let before = value.slice(0, selectionStart);
+            let after = value.slice(selectionEnd);
+            const needSpaceBefore = before.length > 0 && !/\s$/.test(before);
+            const needSpaceAfter = after.length > 0 && !/^\s/.test(after);
+            const next = (needSpaceBefore ? before + ' ' : before) + fuzzyToken + (needSpaceAfter ? ' ' + after : after);
+            applyFilter(next);
+        } else {
+            const raw = value.trim();
+            if (raw !== '') applyFilter(toFuzzyQuery(raw));
+        }
     });
     return button as HTMLButtonElement;
 }
@@ -596,6 +611,7 @@ function showSavePopover(anchor: HTMLElement): void {
         if (!savePopover?.contains(ev.target as Node) && ev.target !== anchor) close();
     }
     function onKey(ev: KeyboardEvent) {
+        if (ev.isComposing) return;
         if (ev.key === 'Escape') close();
         if (ev.key === 'Enter') {
             ev.preventDefault();
