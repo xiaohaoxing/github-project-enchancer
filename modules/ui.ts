@@ -1,16 +1,25 @@
-import { applyFilter, toFuzzyQuery } from './filter';
+import { applyFilter, toFuzzyQuery, parseFilterQuery, setToken } from './filter';
 import { getSavedFilters, saveFilter, deleteFilter, type SavedFilter } from './storage';
 
 const INPUT_ID = 'filter-bar-component-input';
 const BUTTON_ID = 'tampermonkey-format-title-button';
 const BUTTON_TEXT = 'Fuzzy';
 const SAVE_BUTTON_ID = 'tampermonkey-save-filter-button';
-const SAVE_BUTTON_TEXT = '⭐';
 const DROPDOWN_ID = 'tampermonkey-saved-filters-dropdown';
 const SAVE_POPOVER_ID = 'tampermonkey-save-filter-popover';
 const TOOLBAR_ID = 'tampermonkey-filter-toolbar';
 const WRAPPER_CLASS = 'tampermonkey-input-wrapper';
 const MIN_INPUT_TEXT_AREA_WIDTH = 50;
+const LEFT_CONTAINER_ID = 'tampermonkey-left-controls';
+
+// Filter row controls
+const FILTER_ROW_ID = 'tampermonkey-filter-row';
+const CTRL_TITLE_ID = 'tampermonkey-filter-title';
+const CTRL_ASSIGNEE_ID = 'tampermonkey-filter-assignee';
+const CTRL_LABEL_ID = 'tampermonkey-filter-label';
+const CTRL_STATUS_ID = 'tampermonkey-filter-status';
+const CTRL_ITERATION_ID = 'tampermonkey-filter-iteration';
+const CTRL_IS_ID = 'tampermonkey-filter-is';
 
 let filterInput: HTMLInputElement | HTMLTextAreaElement | null = null;
 let formatButton: HTMLButtonElement | null = null;
@@ -20,6 +29,15 @@ let toolbar: HTMLDivElement | null = null;
 let inputWrapper: HTMLDivElement | null = null;
 let resizeObserver: ResizeObserver | null = null;
 let savePopover: HTMLDivElement | null = null;
+let filterRow: HTMLDivElement | null = null;
+let leftContainer: HTMLDivElement | null = null;
+
+let ctrlTitle: HTMLInputElement | null = null;
+let ctrlAssignee: HTMLInputElement | null = null;
+let ctrlLabel: HTMLInputElement | null = null;
+let ctrlStatus: HTMLInputElement | null = null;
+let ctrlIteration: HTMLInputElement | null = null;
+let ctrlIs: HTMLSelectElement | null = null;
 
 
 export function initToolbarAndButtons(): void {
@@ -392,12 +410,149 @@ function createToolbar(): HTMLDivElement {
     bar.id = TOOLBAR_ID;
     bar.style.display = 'flex';
     bar.style.alignItems = 'center';
+    bar.style.flexWrap = 'wrap';
     bar.style.marginBottom = '4px';
     bar.style.gap = '0';
     bar.style.paddingLeft = '0';
     bar.style.paddingRight = '0';
     bar.style.width = 'auto';
     return bar as HTMLDivElement;
+}
+
+function createLeftContainer(): HTMLDivElement {
+    const existing = document.getElementById(LEFT_CONTAINER_ID) as HTMLDivElement | null;
+    if (existing) return existing;
+    const el = document.createElement('div');
+    el.id = LEFT_CONTAINER_ID;
+    el.style.display = 'flex';
+    el.style.alignItems = 'center';
+    el.style.gap = '8px';
+    el.style.marginRight = '8px';
+    (el.style as any).flex = '0 0 auto';
+    return el as HTMLDivElement;
+}
+
+function createInputBase(): HTMLInputElement {
+    const input = document.createElement('input');
+    input.type = 'text';
+    input.className = 'form-control form-control-sm';
+    input.style.height = '28px';
+    input.style.fontSize = '12px';
+    input.style.lineHeight = '18px';
+    input.style.padding = '4px 8px';
+    input.style.border = '1px solid var(--color-border-default, rgba(31, 35, 40, 0.15))';
+    input.style.borderRadius = '6px';
+    input.style.backgroundColor = 'var(--color-canvas-default, #ffffff)';
+    input.style.color = 'var(--color-fg-default, #24292f)';
+    input.style.minWidth = '120px';
+    return input;
+}
+
+function createSelectBase(): HTMLSelectElement {
+    const select = document.createElement('select');
+    select.className = 'form-select select-sm';
+    select.style.height = '28px';
+    select.style.fontSize = '12px';
+    select.style.lineHeight = '18px';
+    select.style.paddingLeft = '12px';
+    select.style.paddingRight = '32px';
+    select.style.border = '1px solid var(--color-border-default, rgba(31, 35, 40, 0.15))';
+    select.style.borderRadius = '6px';
+    select.style.backgroundColor = 'var(--color-canvas-default, #ffffff)';
+    select.style.color = 'var(--color-fg-default, #24292f)';
+    select.style.backgroundImage = 'url("data:image/svg+xml,%3Csvg width=\'16\' height=\'16\' viewBox=\'0 0 16 16\' fill=\'%23586069\' xmlns=\'http://www.w3.org/2000/svg\'%3E%3Cpath d=\'M4.427 7.427l3.396 3.396a.25.25 0 00.354 0l3.396-3.396A.25.25 0 0011.396 7H4.604a.25.25 0 00-.177.427z\'/%3E%3C/svg%3E")';
+    select.style.backgroundRepeat = 'no-repeat';
+    select.style.backgroundPosition = 'right 8px center';
+    select.style.backgroundSize = '16px';
+    select.style.appearance = 'none';
+    select.style.cursor = 'pointer';
+    return select;
+}
+
+function createFilterRow(): HTMLDivElement {
+    const existing = document.getElementById(FILTER_ROW_ID) as HTMLDivElement | null;
+    if (existing) return existing;
+
+    const row = document.createElement('div');
+    row.id = FILTER_ROW_ID;
+    row.style.display = 'flex';
+    row.style.alignItems = 'center';
+    row.style.gap = '8px';
+    row.style.marginRight = '8px';
+
+    // Title contains
+    ctrlTitle = createInputBase();
+    ctrlTitle.id = CTRL_TITLE_ID;
+    ctrlTitle.placeholder = '标题包含';
+    ctrlTitle.style.minWidth = '140px';
+    ctrlTitle.addEventListener('change', () => onControlChanged('title', (ctrlTitle!.value || '').trim() ? `*${(ctrlTitle!.value || '').trim()}*` : ''));
+
+    // Assignee
+    ctrlAssignee = createInputBase();
+    ctrlAssignee.id = CTRL_ASSIGNEE_ID;
+    ctrlAssignee.placeholder = 'assignee';
+    ctrlAssignee.addEventListener('change', () => onControlChanged('assignee', (ctrlAssignee!.value || '').trim()))
+
+    // Label
+    ctrlLabel = createInputBase();
+    ctrlLabel.id = CTRL_LABEL_ID;
+    ctrlLabel.placeholder = 'label';
+    ctrlLabel.addEventListener('change', () => onControlChanged('label', (ctrlLabel!.value || '').trim()))
+
+    // Status
+    ctrlStatus = createInputBase();
+    ctrlStatus.id = CTRL_STATUS_ID;
+    ctrlStatus.placeholder = 'status';
+    ctrlStatus.addEventListener('change', () => onControlChanged('status', (ctrlStatus!.value || '').trim()))
+
+    // Iteration
+    ctrlIteration = createInputBase();
+    ctrlIteration.id = CTRL_ITERATION_ID;
+    ctrlIteration.placeholder = 'iteration';
+    ctrlIteration.addEventListener('change', () => onControlChanged('iteration', (ctrlIteration!.value || '').trim()))
+
+    // is: open/closed
+    ctrlIs = createSelectBase();
+    ctrlIs.id = CTRL_IS_ID;
+    const optAny = document.createElement('option'); optAny.value = ''; optAny.textContent = 'is:any';
+    const optOpen = document.createElement('option'); optOpen.value = 'open'; optOpen.textContent = 'is:open';
+    const optClosed = document.createElement('option'); optClosed.value = 'closed'; optClosed.textContent = 'is:closed';
+    ctrlIs.appendChild(optAny);
+    ctrlIs.appendChild(optOpen);
+    ctrlIs.appendChild(optClosed);
+    ctrlIs.addEventListener('change', () => onControlChanged('is', ctrlIs!.value || ''));
+
+    row.appendChild(ctrlTitle);
+    row.appendChild(ctrlAssignee);
+    row.appendChild(ctrlLabel);
+    row.appendChild(ctrlStatus);
+    row.appendChild(ctrlIteration);
+    row.appendChild(ctrlIs);
+
+    return row as HTMLDivElement;
+}
+
+function onControlChanged(key: string, value: string): void {
+    const currentDomInput = document.getElementById(INPUT_ID) as HTMLInputElement | HTMLTextAreaElement | null;
+    if (!currentDomInput) return;
+    const current = currentDomInput.value || '';
+    const next = setToken(current, key, value);
+    if (next !== current) applyFilter(next);
+}
+
+function syncControlsFromQuery(): void {
+    const currentDomInput = document.getElementById(INPUT_ID) as HTMLInputElement | HTMLTextAreaElement | null;
+    if (!currentDomInput) return;
+    const parsed = parseFilterQuery(currentDomInput.value || '');
+    const t = (parsed.knownTokens['title'] || '').trim();
+    // strip wrapping * for display
+    const titleDisplay = t.startsWith('*') && t.endsWith('*') && t.length >= 2 ? t.slice(1, -1) : t;
+    if (ctrlTitle) ctrlTitle.value = titleDisplay;
+    if (ctrlAssignee) ctrlAssignee.value = parsed.knownTokens['assignee'] || '';
+    if (ctrlLabel) ctrlLabel.value = parsed.knownTokens['label'] || '';
+    if (ctrlStatus) ctrlStatus.value = parsed.knownTokens['status'] || '';
+    if (ctrlIteration) ctrlIteration.value = parsed.knownTokens['iteration'] || '';
+    if (ctrlIs) ctrlIs.value = parsed.knownTokens['is'] || '';
 }
 
 function adjustLayout(): void {
@@ -436,6 +591,7 @@ function setupInputAndButton(): void {
         if (resizeObserver && inputWrapper) resizeObserver.unobserve(inputWrapper);
         if (formatButton && formatButton.parentNode) formatButton.parentNode.removeChild(formatButton);
         if (toolbar && toolbar.parentNode) toolbar.parentNode.removeChild(toolbar);
+        if (leftContainer && leftContainer.parentNode) leftContainer.parentNode.removeChild(leftContainer);
         if (inputWrapper && inputWrapper.parentNode && inputWrapper.classList.contains(WRAPPER_CLASS)) {
             const originalParent = inputWrapper.parentNode as HTMLElement;
             if (filterInput && document.body.contains(filterInput) && filterInput.parentElement !== originalParent) {
@@ -451,6 +607,7 @@ function setupInputAndButton(): void {
         toolbar = null;
         saveButton = null;
         savedFiltersDropdown = null;
+        leftContainer = null;
         return;
     }
 
@@ -486,6 +643,17 @@ function setupInputAndButton(): void {
         }
     }
 
+    // Ensure left controls container exists on the same row as search input
+    const inputParent = inputWrapper.parentElement as HTMLElement | null;
+    if (inputParent) {
+        if (!leftContainer || !document.body.contains(leftContainer)) {
+            leftContainer = createLeftContainer();
+        }
+        if (leftContainer.parentElement !== inputParent) {
+            inputParent.insertBefore(leftContainer, inputWrapper);
+        }
+    }
+
     if (!formatButton || !inputWrapper.contains(formatButton)) {
         formatButton = createFormatButton();
         inputWrapper.appendChild(formatButton);
@@ -515,14 +683,32 @@ function setupInputAndButton(): void {
         }
     }
 
-    if (!savedFiltersDropdown || !toolbar.contains(savedFiltersDropdown)) {
-        savedFiltersDropdown = createMenu();
-        toolbar.appendChild(savedFiltersDropdown);
+    // filter row (first in toolbar)
+    if (!filterRow || !toolbar.contains(filterRow)) {
+        filterRow = createFilterRow();
+        // Insert as first child of toolbar
+        if (toolbar.firstChild) {
+            toolbar.insertBefore(filterRow, toolbar.firstChild);
+        } else {
+            toolbar.appendChild(filterRow);
+        }
+        // Initial sync from current query
+        syncControlsFromQuery();
+        // Listen to input change to reflect tokens back
+        const onInputChanged = () => requestAnimationFrame(syncControlsFromQuery);
+        (filterInput as HTMLInputElement).removeEventListener?.('input', onInputChanged as any);
+        (filterInput as HTMLInputElement).addEventListener('input', onInputChanged);
     }
 
-    if (!saveButton || !toolbar.contains(saveButton)) {
+    // Move common filters (dropdown + save) to the left of the search input
+    if (!savedFiltersDropdown || !leftContainer?.contains(savedFiltersDropdown)) {
+        savedFiltersDropdown = createMenu();
+        leftContainer?.appendChild(savedFiltersDropdown);
+    }
+
+    if (!saveButton || !leftContainer?.contains(saveButton)) {
         saveButton = createSaveButton();
-        toolbar.appendChild(saveButton);
+        leftContainer?.appendChild(saveButton);
     }
 
     adjustLayout();
