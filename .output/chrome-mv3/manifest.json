@@ -1,1 +1,0 @@
-{"manifest_version":3,"name":"GitHub Project Filter Enhancer","description":"在 GitHub Projects 页面添加一键模糊搜索与常用筛选收藏（基于 WXT）。","version":"3.1.0","permissions":["storage"],"host_permissions":["https://github.com/*"],"content_scripts":[{"matches":["https://github.com/*/*/projects/*","https://github.com/orgs/*/projects/*"],"run_at":"document_idle","js":["content-scripts/content.js"]}]}
